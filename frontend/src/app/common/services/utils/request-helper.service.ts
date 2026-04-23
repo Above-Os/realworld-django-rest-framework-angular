@@ -36,7 +36,22 @@ export class RequestHelperService {
   }
 
   private _decorateUrl(url: string): string {
-    return `${environment.apiUrl}${url}`;
+    return `${this._getApiBasePath()}${url}`;
+  }
+
+  private _getApiBasePath(): string {
+    if (typeof window === "undefined") {
+      return environment.apiUrl;
+    }
+
+    // Coder path mode:
+    // /@owner/workspace.agent/apps/preview/... -> /@owner/workspace.agent/apps/preview/api
+    const match = window.location.pathname.match(/^\/@[^/]+\/[^/]+\/apps\/[^/]+/);
+    if (match?.[0]) {
+      return `${match[0]}/api`;
+    }
+
+    return environment.apiUrl;
   }
 
   private _constructRequestHeaders(): HttpHeaders {
