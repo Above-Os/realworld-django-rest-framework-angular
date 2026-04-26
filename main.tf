@@ -109,10 +109,34 @@ data "coder_workspace_preset" "default" {
       cd ..
     fi
 
-    # Initialize: Build frontend with relative asset paths, then start services
+    # Initialize dependencies/db only.
     cd realworld-django-rest-framework-angular
-    npm --prefix=frontend run build -- --configuration development --base-href ./ --deploy-url ./
-    ./start-dev.sh
+    ./start-dev.sh init
+    npm --prefix=frontend ci
+
+    # Restart sessions with the path-mode-friendly stack:
+    # - backend: Django API
+    # - frontend: built static app via http-server (instead of ng serve)
+    tmux kill-session -t realworld-backend 2>/dev/null || true
+    tmux kill-session -t realworld-frontend 2>/dev/null || true
+
+    tmux new-session -d -s realworld-backend -c "$PWD" \
+      'source .venv/bin/activate && python backend/manage.py runserver 0.0.0.0:8000'
+
+    tmux new-session -d -s realworld-frontend -c "$PWD/frontend" \
+      'set -e; npx ng build --configuration development --base-href ./ --deploy-url ./; npx --yes http-server ./dist/frontend/browser -p ${data.coder_parameter.preview_port.value} -a 0.0.0.0 -P http://localhost:8000'
+
+    # Fail fast if frontend did not come up.
+    sleep 2
+    if ! curl -fsS "http://localhost:${data.coder_parameter.preview_port.value}/" >/dev/null; then
+      echo "Frontend failed to start on port ${data.coder_parameter.preview_port.value}. Last logs:"
+      tmux capture-pane -pt realworld-frontend -S -120 || true
+      exit 1
+    fi
+
+    echo "RealWorld started:"
+    echo "  Backend API: http://localhost:8000/api"
+    echo "  Frontend:    http://localhost:4200"
     EOT
     "preview_port"    = "4200"
     "container_image" = "codercom/example-universal:ubuntu"
@@ -159,7 +183,7 @@ data "coder_parameter" "preview_port" {
   display_name = "Preview Port"
   description  = "The port the web app is running to preview in Tasks"
   type         = "number"
-  default      = "3000"
+  default      = "4200"
   mutable      = false
 }
 
